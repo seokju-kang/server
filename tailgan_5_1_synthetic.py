@@ -700,7 +700,8 @@ def evaluate(cfg: Config, ckpt: Optional[str] = None) -> Dict[str, object]:
             print(f"  {label:18s} VaR {100 * per[:, 0].mean():6.2f}   ES {100 * per[:, 1].mean():6.2f}")
 
     import csv
-    with open(run_dir / "eval_oos.csv", "w", newline="") as f:
+    stem = f"eval_oos_{ckpt_path.stem}"            # e.g. eval_oos_final, eval_oos_ckpt_E2900
+    with open(run_dir / f"{stem}.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["strategy", "true_VaR", "true_ES", "RE_VaR", "RE_ES", "SE_VaR", "SE_ES"])
         for k, nm in enumerate(ev["names"]):
@@ -708,8 +709,9 @@ def evaluate(cfg: Config, ckpt: Optional[str] = None) -> Dict[str, object]:
                         ev["RE_per_strategy"][k, 0], ev["RE_per_strategy"][k, 1],
                         ev["SE_per_strategy"][k, 0], ev["SE_per_strategy"][k, 1]])
     summary = {k: ev[k] for k in ("RE_mean", "RE_std", "SE_mean", "SE_std")}
-    (run_dir / "eval_oos.json").write_text(json.dumps(summary, indent=2))
-    print(f"\nsaved {run_dir / 'eval_oos.csv'}")
+    summary["checkpoint"] = ckpt_path.name
+    (run_dir / f"{stem}.json").write_text(json.dumps(summary, indent=2))
+    print(f"\nsaved {run_dir / (stem + '.csv')}")
     return ev
 
 

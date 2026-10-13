@@ -45,7 +45,7 @@ python -u tailgan_5_1_synthetic.py all --out work_smoke --n-train 5000 --n-test 
 specific checkpoint.
 
 TensorBoard logs are written to `work/runs/<run>/tb` (`tensorboard --logdir work/runs`);
-checkpoints to `work/runs/<run>/ckpt_E*.pt`; evaluation to `eval_oos.csv` / `eval_oos.json`.
+checkpoints to `work/runs/<run>/ckpt_E*.pt`; evaluation to `eval_oos_<checkpoint>.csv` / `.json`.
 
 ## Deviations from the official code (all marked `NOTE:` in the source)
 
