@@ -1,0 +1,4 @@
+torch>=2.7          # RTX 5090 (Blackwell) needs a recent CUDA build
+numpy<2
+scipy
+tensorboard
