@@ -672,9 +672,19 @@ def train(cfg: Config) -> Path:
 def evaluate(cfg: Config, ckpt: Optional[str] = None) -> Dict[str, object]:
     device = get_device()
     rng = np.random.default_rng(cfg.seed + 100)
+    torch.manual_seed(cfg.seed + 100)            # generator noise: same samples on every call
     R_train, R_test, port, asset_names = load_data(cfg)
     run_dir = Path(cfg.out) / "runs" / cfg.run_name
-    ckpt_path = Path(ckpt) if ckpt else run_dir / "final.pt"
+    ckpts = sorted(run_dir.glob("ckpt_E*.pt"), key=lambda p: int(p.stem.split("_E")[1]))
+    if ckpt == "latest":
+        ckpt_path = ckpts[-1] if ckpts else run_dir / "final.pt"
+    else:
+        ckpt_path = Path(ckpt) if ckpt else run_dir / "final.pt"
+    if not ckpt_path.exists():
+        latest = ckpts[-1].name if ckpts else "none"
+        raise SystemExit(f"[eval] {ckpt_path} not found. Training for run '{cfg.run_name}' has not "
+                         f"finished (latest checkpoint: {latest}). Wait for it, or pass --ckpt latest / "
+                         f"--ckpt <path>.")
     state = torch.load(ckpt_path, map_location=device)
     G = Generator(cfg).to(device)
     G.load_state_dict(state["G"])
@@ -740,7 +750,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-port", type=int, default=Config.n_port)
     p.add_argument("--no-rescale", action="store_true", help="do not rescale each path to the target std")
     p.add_argument("--no-project", action="store_true", help="disable the (VaR, ES) projection")
-    p.add_argument("--ckpt", default=None, help="checkpoint to evaluate (default: final.pt of the run)")
+    p.add_argument("--ckpt", default=None,
+                   help="checkpoint to evaluate: a path, or 'latest' for the newest ckpt_E*.pt (default: final.pt)")
     p.add_argument("--tag", default="", help="suffix for the run directory name")
     return p
 

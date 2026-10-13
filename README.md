@@ -42,7 +42,8 @@ python -u tailgan_5_1_synthetic.py all --out work_smoke --n-train 5000 --n-test 
 
 `eval` locates the run directory from the same flags as `train` (`--mode`, `--epochs`,
 `--n-train`, `--seed`, `--alpha`, `--tag`), so pass them again, or point `--ckpt` at a
-specific checkpoint.
+specific checkpoint (`--ckpt latest` picks the newest `ckpt_E*.pt`, useful while a run is
+still training). Evaluation is seeded, so repeated calls give identical numbers.
 
 TensorBoard logs are written to `work/runs/<run>/tb` (`tensorboard --logdir work/runs`);
 checkpoints to `work/runs/<run>/ckpt_E*.pt`; evaluation to `eval_oos_<checkpoint>.csv` / `.json`.
