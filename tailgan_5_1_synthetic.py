@@ -100,6 +100,8 @@ class Config:
     sort_temp: float = 0.01        # temperature of the neural sort
     epochs: int = 3000
     seed: int = 1
+    d_warmup_steps: int = 0        # supervised warm-start of D as a VaR/ES estimator (0 = paper)
+    d_warmup_lr: float = 1e-4
 
     # --- evaluation (Section 4.2)
     eval_n: int = 1000             # N in RE(N) / SE(N)
@@ -114,6 +116,10 @@ class Config:
     @property
     def run_name(self) -> str:
         base = f"tailgan_{self.mode}_a{self.alpha}_E{self.epochs}_N{self.n_train}_seed{self.seed}"
+        if self.lam != 1.0:
+            base += f"_lam{self.lam:g}"
+        if self.d_warmup_steps > 0:
+            base += f"_dwarm{self.d_warmup_steps}"
         return base + (f"_{self.tag}" if self.tag else "")
 
 
@@ -602,6 +608,30 @@ def train(cfg: Config) -> Path:
 
     data = torch.as_tensor(R_train, device=device)
     n_batches = cfg.n_train // cfg.batch_size
+
+    # ---- optional supervised warm-start of the discriminator (NOTE: not in the paper).
+    # With lambda = 1 the D objective lam*s_real - s_fake is zero for ANY constant D, so
+    # nothing anchors D's output level; with lr_D = 1e-7 and a bias-dominated init D can
+    # stay a near-constant map and the game stalls (observed in mode=raw, K=5). A few
+    # hundred steps of minimising s_real alone makes D a VaR/ES estimator before the
+    # adversarial game starts.
+    if cfg.d_warmup_steps > 0:
+        opt_pre = torch.optim.Adam(D.parameters(), lr=cfg.d_warmup_lr, betas=cfg.adam_betas)
+        with torch.no_grad():
+            pr = strats.pnl(data[torch.randint(0, cfg.n_train, (cfg.batch_size,), device=device)])
+            v0, e0 = var_es(pr.cpu().numpy(), cfg.alpha)
+            s_min = score_quant(torch.as_tensor(np.stack([v0, e0], 1), dtype=torch.float32, device=device),
+                                pr, cfg.alpha, cfg.W).item()
+        print(f"[warmup D] {cfg.d_warmup_steps} steps at lr {cfg.d_warmup_lr}; attainable s_real ~ {s_min:.5f}", flush=True)
+        for t in range(1, cfg.d_warmup_steps + 1):
+            pr = strats.pnl(data[torch.randint(0, cfg.n_train, (cfg.batch_size,), device=device)])
+            loss = score_quant(D(pr), pr, cfg.alpha, cfg.W)
+            opt_pre.zero_grad(set_to_none=True)
+            loss.backward()
+            opt_pre.step()
+            if t % 50 == 0 or t == cfg.d_warmup_steps:
+                print(f"[warmup D] step {t}/{cfg.d_warmup_steps}  s_real {loss.item():.5f}", flush=True)
+
     history = []
     t0 = time.time()
     for epoch in range(1, cfg.epochs + 1):
@@ -740,7 +770,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--alpha", type=float, default=Config.alpha)
     p.add_argument("--lr-d", type=float, default=Config.lr_d)
     p.add_argument("--lr-g", type=float, default=Config.lr_g)
-    p.add_argument("--lam", type=float, default=Config.lam)
+    p.add_argument("--lam", type=float, default=Config.lam, help="dual parameter lambda (paper: 1; 2 and 10 reported as equivalent)")
+    p.add_argument("--d-warmup-steps", type=int, default=Config.d_warmup_steps,
+                   help="supervised warm-start steps for D as a VaR/ES estimator before the game (0 = paper)")
+    p.add_argument("--d-warmup-lr", type=float, default=Config.d_warmup_lr)
     p.add_argument("--seed", type=int, default=Config.seed)
     p.add_argument("--data-seed", type=int, default=Config.data_seed)
     p.add_argument("--eval-every", type=int, default=Config.eval_every)
@@ -762,7 +795,7 @@ def config_from_args(a: argparse.Namespace) -> Config:
                   seed=a.seed, data_seed=a.data_seed, eval_every=a.eval_every,
                   ckpt_every=a.ckpt_every, eval_n=a.eval_n, eval_repeats=a.eval_repeats,
                   n_port=a.n_port, rescale_paths=not a.no_rescale, project=not a.no_project,
-                  tag=a.tag)
+                  d_warmup_steps=a.d_warmup_steps, d_warmup_lr=a.d_warmup_lr, tag=a.tag)
 
 
 def main() -> None:

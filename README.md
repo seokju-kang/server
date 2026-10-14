@@ -48,6 +48,26 @@ still training). Evaluation is seeded, so repeated calls give identical numbers.
 TensorBoard logs are written to `work/runs/<run>/tb` (`tensorboard --logdir work/runs`);
 checkpoints to `work/runs/<run>/ckpt_E*.pt`; evaluation to `eval_oos_<checkpoint>.csv` / `.json`.
 
+## Raw mode (Tail-GAN-Raw) can stall: what we found and the options
+
+With only the 5 buy-and-hold PnLs (K = 5) a run at the paper's hyper-parameters can get
+stuck at ~130 % OOS error with the discriminator collapsed to a near-constant map: with
+λ = 1 the discriminator objective `λ·s_real − s_fake` is zero for *any* constant D, so
+nothing anchors D's output level, and at lr_D = 1e-7 a bias-dominated init never becomes
+a VaR/ES estimator (its score stays ~0.27 against an attainable ~0.09). The generator then
+drifts along directions D cannot see. `diag_tailgan.py` shows the signature: D(real) ≈
+D(fake) ≈ 0 on the line e = W·v, and |D(2x) − D(x)| ≈ 1e-3. This is a property of the
+game, not an implementation bug (the official code has the same loop; its 10-model
+ensemble with selection by final generator loss would discard such a run). Two options,
+both off by default:
+
+* `--lam 10 --lr-d 1e-5`: λ > 1 makes `s_real` dominate so D is pushed to be an estimator.
+  Appendix C.2 of the paper reports λ = 2 and 10 performing like λ = 1.
+* `--d-warmup-steps 300`: supervised warm-start of D (minimise `s_real` only) before the
+  adversarial game, then the paper's loop unchanged.
+
+Run names include `_lam<λ>` / `_dwarm<steps>` so these runs do not collide with defaults.
+
 ## Deviations from the official code (all marked `NOTE:` in the source)
 
 * **GARCH noise scaling.** The official code feeds the tiny-variance Gaussian `u`
